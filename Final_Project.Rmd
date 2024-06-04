@@ -1,0 +1,1413 @@
+---
+title: "Final_Project"
+author: "Yicheng Shao, Shiyuan Zhao, Bingyan Zheng"
+date: "2024-05-16"
+output: html_document
+---
+
+## 第一部分: 出品分析
+```{r}
+rm(list = ls())
+
+my_theme_null <- function(){
+  theme_linedraw(base_size = 12) +
+    theme(
+      plot.background = element_rect(fill = NA, color = NA),
+      plot.title = element_text(size = 18, hjust = 0.5, vjust = 0.5, color = "black", face = "bold", margin = margin(b = 0.2, unit = "cm")),
+      plot.subtitle = element_text(size = 12, hjust = 0, vjust = 0.5, margin = margin(b = 0.2, unit = "cm")),
+      plot.caption = element_text(size = 10, hjust = 1, face = "italic", margin = margin(t = 0.1, unit = "cm"), colour = "#CC0000"),
+      axis.ticks = element_blank(),
+      axis.text.x = element_text(size = 12, colour = "grey30"),  
+      axis.text.y = element_text(size = 12, colour = "grey30"),
+      legend.background = element_rect(fill = NA, color = NA),
+      legend.position = "none", 
+      legend.key = element_rect(fill = NA, color = NA),
+      legend.title = element_text(size = 12, hjust = 0.5, face = "bold"),
+      panel.grid.major.x = element_line(colour = "grey45", linetype = "dashed", size = 0.1),
+      panel.grid.major.y = element_blank(),
+      panel.background = element_rect(fill = "white"),
+      panel.grid.major = element_line(color = "grey45", size = 0.3),
+      panel.grid.minor = element_blank(),
+      strip.background = element_rect(fill = ""),
+      strip.text.x = element_text(size = 10, color = "black", face = "bold")
+    )
+}
+
+
+my_theme <- function () {
+#theme_linedraw(base_size=11) +
+  theme(
+    plot.background = element_rect(fill = NA, color = NA),
+    plot.title = element_text(size = 18, hjust = 0.5, vjust = 0.5, color = "black", face = "bold", margin = margin(b = 0.2, unit = "cm")),
+    plot.subtitle = element_text(size = 13, hjust = 0, vjust = 0.5,
+    margin = margin(b = 0.2, unit = "cm")),
+    plot.caption = element_text(size = 7, hjust = 1, face = "italic", color = "#CC0000",
+    margin = margin(t = 0.1, unit = "cm")),
+    axis.ticks = element_line(color = "black"), # 刻度线设为黑色一个小点
+    axis.text = element_text(size = 12),
+    axis.title = element_text(size = 14),
+    legend.background = element_rect(fill = NA, color = NA),
+    legend.key = element_rect(fill = NA, color = NA),
+    legend.title = element_text(size = 12, face = "bold"),
+    legend.text = element_text(size = 10),
+    panel.background = element_blank(),
+    panel.grid.major = element_line(color = "grey90", size = 0.2),
+    panel.grid.minor = element_blank()
+  )
+}
+```
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(stringr)
+library(tidyverse)
+library(RColorBrewer)
+library(countrycode)
+library(dplyr)
+
+
+movie <- read.csv('data.csv')
+
+movie_long <- movie %>%
+    separate_longer_delim(production_countries, delim = ",")%>%
+    mutate(production_countries = str_trim(production_countries))
+
+countries<-movie_long$production_countries
+
+iso3_codes <- countrycode(countries, "country.name", "iso3c")
+continent_names <- countrycode(iso3_codes, "iso3c", "continent")
+
+movie_long <- movie_long %>%
+  mutate(production_continents = continent_names)
+```
+
+##  电影国家分布图
+
+本节中, 展示每个大洲的前Top 5国家, 每个大洲内的其他的国家合并为other. 此外大洲为Other的国家全部合并为other.
+
+## 彩图
+
+```{r, fig.width = 13,fig.height= 10}
+library(webr)
+library(waffle)
+
+movie_long <- movie_long %>%
+  mutate(production_countries = ifelse(production_countries == "Hong Kong", "China", as.character(production_countries))) 
+
+continent_country_count <- movie_long %>%
+  mutate(production_countries = ifelse(production_countries == "Hong Kong", "China", as.character(production_countries))) %>%
+  group_by(production_continents, production_countries) %>%
+  summarise(num_movies = n()) %>%
+  ungroup()
+
+top_countries <- continent_country_count %>%
+  mutate(production_continents = case_when(
+    production_continents %in% c("Europe", "Americas", "Asia") ~ as.character(production_continents),
+    TRUE ~ "Other"
+  )) %>%
+  group_by(production_continents) %>%
+  mutate(production_countries = ifelse(production_continents == "Other", "Other", as.character(production_countries))) %>%
+  arrange(desc(num_movies)) %>%
+  mutate(rank = row_number()) %>%
+  mutate(production_countries = ifelse(rank <= 5, as.character(production_countries), "Other"))  %>%
+  ungroup()%>%
+  group_by(production_continents, production_countries) %>%
+  summarise(num_movies = sum(num_movies)) %>%
+  arrange(num_movies) %>%
+  ungroup()
+```
+
+## 创建颜色函数(折叠)
+
+```{r}
+PieDonutCustom <-
+  function (data,
+            mapping,
+            start = getOption("PieDonut.start",
+                              0),
+            addPieLabel = TRUE,
+            addDonutLabel = TRUE,
+            showRatioDonut = TRUE,
+            showRatioPie = TRUE,
+            ratioByGroup = TRUE,
+            showRatioThreshold = getOption("PieDonut.showRatioThreshold",
+                                           0.02),
+            labelposition = getOption("PieDonut.labelposition",
+                                      2),
+            labelpositionThreshold = 0.1,
+            r0 = getOption("PieDonut.r0",
+                           0.3),
+            r1 = getOption("PieDonut.r1", 1),
+            r2 = getOption("PieDonut.r2",
+                           1.2), explode = NULL, selected = NULL, explodePos = 0.1,
+            color = "white", pieAlpha = 0.8, donutAlpha = 1, maxx = NULL,
+            showPieName = TRUE, showDonutName = FALSE, title = NULL,
+            pieLabelSize = 4, donutLabelSize = 3, titlesize = 5, explodePie = TRUE,
+            explodeDonut = FALSE, use.label = TRUE, use.labels = TRUE,
+            family = getOption("PieDonut.family", ""), palette_name = "Dark2")
+  {
+    (cols = colnames(data))
+    if (use.labels)
+      data = moonBook::addLabelDf(data, mapping)
+    count <- NULL
+    if ("count" %in% names(mapping))
+      count <- moonBook::getMapping(mapping, "count")
+    count
+    pies <- donuts <- NULL
+    (pies = moonBook::getMapping(mapping, "pies"))
+    if (is.null(pies))
+      (pies = moonBook::getMapping(mapping, "pie"))
+    if (is.null(pies))
+      (pies = moonBook::getMapping(mapping, "x"))
+    (donuts = moonBook::getMapping(mapping, "donuts"))
+    if (is.null(donuts))
+      (donuts = moonBook::getMapping(mapping, "donut"))
+    if (is.null(donuts))
+      (donuts = moonBook::getMapping(mapping, "y"))
+    if (!is.null(count)) {
+      df <-
+        data %>% group_by(.data[[pies]]) %>% dplyr::summarize(Freq = sum(.data[[count]]))
+      df
+    }
+    else {
+      df = data.frame(table(data[[pies]]))
+    }
+    colnames(df)[1] = pies
+    df$end = cumsum(df$Freq)
+    df$start = dplyr::lag(df$end)
+    df$start[1] = 0
+    total = sum(df$Freq)
+    df$start1 = df$start * 2 * pi / total
+    df$end1 = df$end * 2 * pi / total
+    df$start1 = df$start1 + start
+    df$end1 = df$end1 + start
+    df$focus = 0
+    if (explodePie)
+      df$focus[explode] = explodePos
+    df$mid = (df$start1 + df$end1) / 2
+    df$x = ifelse(df$focus == 0, 0, df$focus * sin(df$mid))
+    df$y = ifelse(df$focus == 0, 0, df$focus * cos(df$mid))
+    df$label = df[[pies]]
+    df$ratio = df$Freq / sum(df$Freq)
+    if (showRatioPie) {
+      df$label = ifelse(
+        df$ratio >= showRatioThreshold,
+        paste0(df$label,
+               "\n(", scales::percent(df$ratio), ")"),
+        as.character(df$label)
+      )
+    }
+    df$labelx = (r0 + r1) / 2 * sin(df$mid) + df$x
+    df$labely = (r0 + r1) / 2 * cos(df$mid) + df$y
+    if (!is.factor(df[[pies]]))
+      df[[pies]] <- factor(df[[pies]])
+    df
+    mainCol = RColorBrewer::brewer.pal(nrow(df), name = palette_name)
+    df$radius = r1
+    df$radius[df$focus != 0] = df$radius[df$focus != 0] + df$focus[df$focus !=
+                                                                     0]
+    df$hjust = ifelse((df$mid %% (2 * pi)) > pi, 1, 0)
+    df$vjust = ifelse(((df$mid %% (2 * pi)) < (pi / 2)) |
+                        (df$mid %% (2 *
+                                      pi) > (pi * 3 /
+                                               2)), 0, 1)
+    df$segx = df$radius * sin(df$mid)
+    df$segy = df$radius * cos(df$mid)
+    df$segxend = (df$radius + 0.05) * sin(df$mid)
+    df$segyend = (df$radius + 0.05) * cos(df$mid)
+    df
+    if (!is.null(donuts)) {
+      subColor = makeSubColor(mainCol, no = length(unique(data[[donuts]])))
+      subColor
+      data
+      if (!is.null(count)) {
+        df3 <- as.data.frame(data[c(donuts, pies, count)])
+        colnames(df3) = c("donut", "pie", "Freq")
+        df3
+        df3 <- eval(parse(text = "complete(df3,donut,pie)"))
+        df3$Freq[is.na(df3$Freq)] = 0
+        if (!is.factor(df3[[1]]))
+          df3[[1]] = factor(df3[[1]])
+        if (!is.factor(df3[[2]]))
+          df3[[2]] = factor(df3[[2]])
+        df3 <- df3 %>% arrange(.data$pie, .data$donut)
+        a <- df3 %>% spread(.data$pie, value = .data$Freq)
+        a = as.data.frame(a)
+        a
+        rownames(a) = a[[1]]
+        a = a[-1]
+        a
+        colnames(df3)[1:2] = c(donuts, pies)
+      }
+      else {
+        df3 = data.frame(table(data[[donuts]], data[[pies]]),
+                         stringsAsFactors = FALSE)
+        colnames(df3)[1:2] = c(donuts, pies)
+        a = table(data[[donuts]], data[[pies]])
+        a
+      }
+      a
+      df3
+      df3$group = rep(colSums(a), each = nrow(a))
+      df3$pie = rep(1:ncol(a), each = nrow(a))
+      total = sum(df3$Freq)
+      total
+      df3$ratio1 = df3$Freq / total
+      df3
+      if (ratioByGroup) {
+        df3$ratio = scales::percent(df3$Freq / df3$group)
+      }
+      else {
+        df3$ratio <- scales::percent(df3$ratio1)
+      }
+      df3$end = cumsum(df3$Freq)
+      df3
+      df3$start = dplyr::lag(df3$end)
+      df3$start[1] = 0
+      df3$start1 = df3$start * 2 * pi / total
+      df3$end1 = df3$end * 2 * pi / total
+      df3$start1 = df3$start1 + start
+      df3$end1 = df3$end1 + start
+      df3$mid = (df3$start1 + df3$end1) / 2
+      df3$focus = 0
+      if (!is.null(selected)) {
+        df3$focus[selected] = explodePos
+      }
+      else if (!is.null(explode)) {
+        selected = c()
+        for (i in 1:length(explode)) {
+          start = 1 + nrow(a) * (explode[i] - 1)
+          selected = c(selected, start:(start + nrow(a) -
+                                          1))
+        }
+        selected
+        df3$focus[selected] = explodePos
+      }
+      df3
+      df3$x = 0
+      df3$y = 0
+      df
+      if (!is.null(explode)) {
+        explode
+        for (i in 1:length(explode)) {
+          xpos = df$focus[explode[i]] * sin(df$mid[explode[i]])
+          ypos = df$focus[explode[i]] * cos(df$mid[explode[i]])
+          df3$x[df3$pie == explode[i]] = xpos
+          df3$y[df3$pie == explode[i]] = ypos
+        }
+      }
+      df3$no = 1:nrow(df3)
+      df3$label = df3[[donuts]]
+      if (showRatioDonut) {
+        if (max(nchar(levels(df3$label))) <= 2)
+          df3$label = paste0(df3$label, "(", df3$ratio,
+                             ")")
+        else
+          df3$label = paste0(df3$label, "\n(", df3$ratio,
+                             ")")
+      }
+      df3$label[df3$ratio1 == 0] = ""
+      df3$label[df3$ratio1 < showRatioThreshold] = ""
+      df3$hjust = ifelse((df3$mid %% (2 * pi)) > pi, 1, 0)
+      df3$vjust = ifelse(((df3$mid %% (2 * pi)) < (pi / 2)) |
+                           (df3$mid %% (2 *
+                                          pi) > (pi * 3 /
+                                                   2)), 0, 1)
+      df3$no = factor(df3$no)
+      df3
+      labelposition
+      if (labelposition > 0) {
+        df3$radius = r2
+        if (explodeDonut)
+          df3$radius[df3$focus != 0] = df3$radius[df3$focus !=
+                                                    0] + df3$focus[df3$focus != 0]
+        df3$segx = df3$radius * sin(df3$mid) + df3$x
+        df3$segy = df3$radius * cos(df3$mid) + df3$y
+        df3$segxend = (df3$radius + 0.05) * sin(df3$mid) +
+          df3$x
+        df3$segyend = (df3$radius + 0.05) * cos(df3$mid) +
+          df3$y
+        if (labelposition == 2)
+          df3$radius = (r1 + r2) / 2
+        df3$labelx = (df3$radius) * sin(df3$mid) + df3$x
+        df3$labely = (df3$radius) * cos(df3$mid) + df3$y
+      }
+      else {
+        df3$radius = (r1 + r2) / 2
+        if (explodeDonut)
+          df3$radius[df3$focus != 0] = df3$radius[df3$focus !=
+                                                    0] + df3$focus[df3$focus != 0]
+        df3$labelx = df3$radius * sin(df3$mid) + df3$x
+        df3$labely = df3$radius * cos(df3$mid) + df3$y
+      }
+      df3$segx[df3$ratio1 == 0] = 0
+      df3$segxend[df3$ratio1 == 0] = 0
+      df3$segy[df3$ratio1 == 0] = 0
+      df3$segyend[df3$ratio1 == 0] = 0
+      if (labelposition == 0) {
+        df3$segx[df3$ratio1 < showRatioThreshold] = 0
+        df3$segxend[df3$ratio1 < showRatioThreshold] = 0
+        df3$segy[df3$ratio1 < showRatioThreshold] = 0
+        df3$segyend[df3$ratio1 < showRatioThreshold] = 0
+      }
+      df3
+      del = which(df3$Freq == 0)
+      del
+      if (length(del) > 0)
+        subColor <- subColor[-del]
+      subColor
+    }
+    p <- ggplot() + ggforce::theme_no_axes() + coord_fixed()
+    if (is.null(maxx)) {
+      r3 = r2 + 0.3
+    }
+    else {
+      r3 = maxx
+    }
+    p1 <- p + ggforce::geom_arc_bar(
+      aes_string(
+        x0 = "x",
+        y0 = "y",
+        r0 = as.character(r0),
+        r = as.character(r1),
+        start = "start1",
+        end = "end1",
+        fill = pies
+      ),
+      alpha = pieAlpha,
+      color = color,
+      data = df
+    ) + transparent() + scale_fill_manual(values = mainCol) +
+      xlim(r3 * c(-1, 1)) + ylim(r3 * c(-1, 1)) + guides(fill = FALSE)
+    if ((labelposition == 1) & (is.null(donuts))) {
+      p1 <- p1 + geom_segment(aes_string(
+        x = "segx",
+        y = "segy",
+        xend = "segxend",
+        yend = "segyend"
+      ),
+      data = df) + geom_text(
+        aes_string(
+          x = "segxend",
+          y = "segyend",
+          label = "label",
+          hjust = "hjust",
+          vjust = "vjust"
+        ),
+        size = pieLabelSize,
+        data = df,
+        family = family
+      )
+    }
+    else if ((labelposition == 2) & (is.null(donuts))) {
+      p1 <- p1 + geom_segment(aes_string(
+        x = "segx",
+        y = "segy",
+        xend = "segxend",
+        yend = "segyend"
+      ),
+      data = df[df$ratio < labelpositionThreshold,]) +
+        geom_text(
+          aes_string(
+            x = "segxend",
+            y = "segyend",
+            label = "label",
+            hjust = "hjust",
+            vjust = "vjust"
+          ),
+          size = pieLabelSize,
+          data = df[df$ratio < labelpositionThreshold,],
+          family = family
+        ) + geom_text(
+          aes_string(x = "labelx",
+                     y = "labely", label = "label"),
+          size = pieLabelSize,
+          data = df[df$ratio >= labelpositionThreshold,],
+          family = family
+        )
+    }
+    else {
+      p1 <- p1 + geom_text(
+        aes_string(x = "labelx", y = "labely",
+                   label = "label"),
+        size = pieLabelSize,
+        data = df,
+        family = family
+      )
+    }
+    if (showPieName)
+      p1 <- p1 + annotate(
+        "text",
+        x = 0,
+        y = 0,
+        label = pies,
+        size = titlesize,
+        family = family
+      )
+    p1 <- p1 + theme(text = element_text(family = family))
+    if (!is.null(donuts)) {
+      if (explodeDonut) {
+        p3 <- p + ggforce::geom_arc_bar(
+          aes_string(
+            x0 = "x",
+            y0 = "y",
+            r0 = as.character(r1),
+            r = as.character(r2),
+            start = "start1",
+            end = "end1",
+            fill = "no",
+            explode = "focus"
+          ),
+          alpha = donutAlpha,
+          color = color,
+          data = df3
+        )
+      }
+      else {
+        p3 <- p + ggforce::geom_arc_bar(
+          aes_string(
+            x0 = "x",
+            y0 = "y",
+            r0 = as.character(r1),
+            r = as.character(r2),
+            start = "start1",
+            end = "end1",
+            fill = "no"
+          ),
+          alpha = donutAlpha,
+          color = color,
+          data = df3
+        )
+      }
+      p3 <-
+        p3 + transparent() + scale_fill_manual(values = subColor) +
+        xlim(r3 * c(-1, 1)) + ylim(r3 * c(-1, 1)) + guides(fill = FALSE)
+      p3
+      if (labelposition == 1) {
+        p3 <- p3 + geom_segment(aes_string(
+          x = "segx",
+          y = "segy",
+          xend = "segxend",
+          yend = "segyend"
+        ),
+        data = df3) + geom_text(
+          aes_string(
+            x = "segxend",
+            y = "segyend",
+            label = "label",
+            hjust = "hjust",
+            vjust = "vjust"
+          ),
+          size = donutLabelSize,
+          data = df3,
+          family = family
+        )
+      }
+      else if (labelposition == 0) {
+        p3 <- p3 + geom_text(
+          aes_string(x = "labelx",
+                     y = "labely", label = "label"),
+          size = donutLabelSize,
+          data = df3,
+          family = family
+        )
+      }
+      else {
+        p3 <- p3 + geom_segment(aes_string(
+          x = "segx",
+          y = "segy",
+          xend = "segxend",
+          yend = "segyend"
+        ),
+        data = df3[df3$ratio1 < labelpositionThreshold,]) + geom_text(
+          aes_string(
+            x = "segxend",
+            y = "segyend",
+            label = "label",
+            hjust = "hjust",
+            vjust = "vjust"
+          ),
+          size = donutLabelSize,
+          data = df3[df3$ratio1 < labelpositionThreshold,],
+          family = family
+        ) + geom_text(
+          aes_string(x = "labelx",
+                     y = "labely", label = "label"),
+          size = donutLabelSize,
+          data = df3[df3$ratio1 >= labelpositionThreshold,],
+          family = family
+        )
+      }
+      if (!is.null(title))
+        p3 <- p3 + annotate(
+          "text",
+          x = 0,
+          y = r3,
+          label = title,
+          size = titlesize,
+          family = family
+        )
+      else if (showDonutName)
+        p3 <- p3 + annotate(
+          "text",
+          x = (-1) * r3,
+          y = r3,
+          label = donuts,
+          hjust = 0,
+          size = titlesize,
+          family = family
+        )
+      p3 <- p3 + theme(text = element_text(family = family),
+                       plot.title = element_text(size = 18, hjust = 0.5, vjust = 0.5, color = "black", face = "bold", margin = margin(b = 0.2, unit = "cm")),
+                       plot.caption = element_text(size = 10, hjust = 1, face = "italic", margin = margin(t = 0.1, unit = "cm"), colour = "#CC0000"),
+                       panel.grid.major.x = element_blank(),
+                       panel.grid.major.y = element_blank())
+      p3 <- p3 + annotate(
+        "text",
+        x = 0.95,
+        y = -0.95,
+        label = "Data from The Movie Database (TMDb)",
+        face = "italic", color = "#CC0000"
+      )
+      #+ labs(caption = "Data from The Movie Database (TMDb)")
+      grid::grid.newpage()
+      print(p1, vp = grid::viewport(height = 1, width = 1))
+      print(p3, vp = grid::viewport(height = 1, width = 1))
+    }
+    else {
+      p1
+    }
+  }
+```
+
+## 红黑图(固定图)
+```{r, fig.width = 13, fig.height = 10}
+library(ggplot2)
+library(moonBook)
+library(webr)
+library(RColorBrewer)
+
+PieDonutCustom(
+  top_countries,
+  aes(production_continents, production_countries, count = num_movies),
+  r0 = 0.3,
+  r1 = 0.6,
+  r2 = 0.9,
+  pieAlpha = 0.8,
+  donutAlpha = 0.8,
+  showRatioThreshold = 0.001,
+  addPieLabel = TRUE,
+  addDonutLabel = FALSE,
+  showRatioDonut = FALSE,
+  showRatioPie = TRUE,
+  ratioByGroup = TRUE,
+  showPieName = FALSE,
+  explodePos = 0.15,
+  explode = 2,
+  start = - 3*pi / 2,
+  explodePie = TRUE,
+  color = "white",
+  labelpositionThreshold = 0.3,
+  titlesize = 8,
+  labelposition = 1,
+  pieLabelSize = 4,
+  donutLabelSize = 3,
+  showDonutName = FALSE,
+  palette_name = "RdGy",
+  title = "Movies Production Distribution by Continent and Country"
+)
+```
+
+## 红黑图(交互式旭日图)
+```{r}
+library(sunburstR)
+
+plotseq = data.frame(path = paste(top_countries$production_continents, top_countries$production_countries, sep = "-"),
+                     num = top_countries$num_movies)
+
+set.seed(20240529)
+sund2b(plotseq, colors = list(range = RColorBrewer::brewer.pal(8, "RdGy")), showLabels = TRUE, rootLabel = "Total")
+```
+
+## 世界地图呈现电影数量分布
+
+```{r}
+library(rworldmap)
+library(grDevices)
+
+continent_country_count$production_countries <- gsub('"', '', continent_country_count$production_countries)
+continent_country_count <- na.omit(continent_country_count)
+continent_country_count <- continent_country_count %>%
+  filter(production_countries!='Palestinian Territory')
+
+sPDF <- joinCountryData2Map(continent_country_count, joinCode = "NAME", nameJoinColumn = "production_countries", verbose = TRUE)
+
+p = mapCountryData(sPDF, 
+               nameColumnToPlot = "num_movies", # 分组也不太有用
+               catMethod = "pretty",
+               colourPalette = c("#F2D7D5","#CC0000"),
+               addLegend = TRUE,
+               borderCol = "white",
+               mapTitle = "World Map of Movies Distribution",
+               missingCountryCol = grey(0.9)
+               )
+
+```
+
+
+## 制作公司的电影数量排序柱状图
+
+先筛选了产出大于50部电影的制片公司，再对每个制片公司的电影数量进行降序排序。
+
+```{r, fig.width = 8,fig.height= 5}
+movie_long_2 <- movie %>%
+    separate_longer_delim(production_companies, delim = ",")%>%
+    mutate(production_companies = str_trim(production_companies))
+
+
+movie_long_2 %>%
+  add_count(production_companies) %>%
+  filter(n > 50) %>%  
+  unique() %>%
+  ggplot(aes(x = n, y = reorder(production_companies, n))) +
+  geom_bar(fill = "#CC0000", alpha = 0.5, stat = "identity", position = "dodge", width = 0.5) +
+  geom_text(aes(label = n), hjust = -0.5, col = "#CC0000") +
+  scale_x_continuous(expand = expansion(mult = c(0, 0.1))) +
+  labs(title = "Number of Films of Each Production Companies", 
+       x = "Production Companies", y = " Films Count", caption = "Data from The Movie Database (TMDb)") +
+  theme(plot.title = element_text(hjust = 0.5),
+  axis.text.x = element_text(size = 10),
+  axis.text.y = element_text(size = 8))+
+  my_theme_null() +
+  theme(panel.grid.major.y = element_blank())
+```
+
+先筛选了产出大于20部电影的语言种类, 再对每个语言的电影数量进行降序排序.
+
+
+```{r, fig.width = 8,fig.height = 5}
+
+movie_long_3 <- movie %>%
+    separate_longer_delim(spoken_languages, delim = ",")%>%
+    mutate(spoken_languages = str_trim(spoken_languages))
+
+movie_long_3 %>%
+  add_count(spoken_languages) %>%
+  filter(n > 20) %>%  
+  ggplot(aes(x = n, y = reorder(spoken_languages, n))) +
+  geom_bar(fill="#CC0000", alpha =0.5, stat = "identity", position = "dodge", width = 0.5) +
+  geom_text(aes(label = n), hjust = -0.5, col = "#CC0000") +
+  scale_x_continuous(expand = expansion(mult = c(0, 0.1))) +
+  labs(title = "Movie Language Distribution", x = "Language", y = " Films Count", caption = "Data from The Movie Database (TMDb)") +
+  theme(plot.title = element_text(hjust = 0.5),
+  axis.text.x = element_text(size = 10),
+  axis.text.y = element_text(size = 8))+
+  my_theme_null() +
+  theme(panel.grid.major.y = element_blank())
+```
+
+
+
+## 电影的语言分: 直接饼图
+
+## 不同国家的电影票房分布revenue/欢迎度popularity/vote_average/
+
+```{r,fig.width = 10,fig.height= 8}
+
+library(stringr)
+library(ggplot2)
+library(gghalves)
+library(dplyr)
+library(cowplot)
+
+top5_pop_countries <- movie_long %>%
+  count(production_countries) %>%
+  top_n(5, n) %>%
+  arrange(desc(n))
+
+p1<-movie_long %>%
+  filter(!is.na(popularity) & !is.na(production_countries) & year>2000 & popularity<50 ) %>%
+  filter(production_countries %in% top5_pop_countries$production_countries) %>%
+  ggplot(aes(x = production_countries, y = popularity)) +
+  geom_half_violin(side = "r",alpha=0.5, fill = '#CC0000') +
+  geom_boxplot(width = 0.1,outlier.shape = NA,fill = '#BD4A1C') +
+#  geom_half_point(range_scale = 0,alpha = 0.2,color = '#CACFD2') +
+  coord_flip() +
+  my_theme_null() +
+  labs(subtitle = "Popularity less than 50",x = "Production Countries",y = "", caption = "") +
+  ylim(0,50)
+
+
+p2<-movie_long %>%
+  filter(!is.na(popularity) & !is.na(production_countries) &year>2000 & popularity>=50 ) %>%
+  filter(production_countries %in% top5_pop_countries$production_countries) %>%
+  ggplot(aes(x = production_countries, y = popularity), ) +
+  geom_half_violin(side = "r", alpha=0.5, fill = '#CC0000') +
+  geom_boxplot(width = 0.1,outlier.shape = NA, fill = '#BD4A1C') +
+ # geom_half_point(range_scale = 0,alpha = 0.1,color = 'thistle4') +
+  coord_flip() +
+  my_theme_null() +
+  labs(subtitle = "Popularity more than 50",x = "Production Countries",y = "Popularity", caption = "Data from The Movie Database (TMDb)") +
+  ylim(50, 500)
+
+main_title <- ggtitle("Popularity Distribution by Production Countries ")
+
+combined_plot <- plot_grid(p1 + main_title, p2, nrow = 2, align = "v", rel_heights = c(4, 4))
+
+print(combined_plot)
+```
+
+## 评分 
+
+```{r,fig.width = 8,fig.height= 4}
+
+top10_pop_countries <- movie_long %>%
+  count(production_countries) %>%
+  top_n(10, n) %>%
+  arrange(desc(n))
+
+movie_long %>%
+  filter(!is.na(vote_average) & !is.na(production_countries) & vote_average<10 ) %>%
+  filter(production_countries %in% top10_pop_countries$production_countries) %>%
+  ggplot(aes(x = production_countries, y = vote_average)) +
+  geom_half_violin(side = "r", alpha=0.5, fill = '#CC0000') +
+  geom_boxplot(width = 0.1,outlier.shape = NA,fill = '#BD4A1C') +
+  #geom_half_point(range_scale = 0,alpha = 0.1,color = '#EFEFEF') +
+  coord_flip() +
+  my_theme_null() +
+  labs(title = "Average Vote Score Distribution ",x = "Production Countries",y = "Average Vote Score", caption = "Data from The Movie Database (TMDb)")
+
+
+```
+
+
+## 票房越高的电影是否平均评分也会更高
+
+```{r, fig.width = 8, fig.height= 4}
+# 导入ggplot2包
+library(ggplot2)
+
+movie_long %>%
+  ggplot(aes(x = revenue/10^8, y = vote_count/10^3, color = vote_average)) +
+  geom_jitter(alpha = 0.5, type = 16) +
+  scale_colour_gradient(low = "#EFEFEF", high = "#CC0000", name = "Average Vote") +
+  geom_smooth(method = "gam", se = FALSE, color = "orange") +
+  labs(title = "The Relationship Among \nRevenue,Vote Counts and Vote Average ", 
+       x =expression(paste("Revenue(1 x", 10^8,")", sep = "")), 
+       y = expression(paste("Vote Counts(1 x ", 10^3,")", sep = "")),
+       fill='ok',
+       caption = "Data from The Movie Database (TMDb)") +
+  theme_minimal() +  
+  theme(panel.grid.major = element_line(color = "gray", linetype = "dashed", size = 0.9),  
+        panel.grid.minor = element_blank())  +
+  my_theme_null() +
+  theme(legend.position = "right")
+  xlim(0,10)
+```
+
+
+```{r,fig.width = 10,fig.height= 5}
+top15_pop_countries <- movie_long %>%
+  count(production_countries) %>%
+  top_n(15, n) %>%
+  arrange(desc(n))
+
+
+movie_long %>%
+  filter(!is.na(vote_average) & !is.na(production_countries) & vote_average<10 & year>2004) %>%
+  filter(production_countries %in% top15_pop_countries$production_countries) %>%
+  group_by(year, production_countries) %>%
+  summarise(avg_popularity=mean(vote_average)) %>%
+  # mutate(date = ymd(CST),month = month(date, label = TRUE, locale = "English"),day = day(date)) %>%
+  ggplot(aes(
+    x = factor(year, levels = (unique(year))),
+    y = production_countries,
+    fill = ifelse(is.na(avg_popularity), 0, avg_popularity))) +
+  geom_tile(color = "white", na.rm = T) +
+  geom_text(aes(label = round(avg_popularity,2)), color = "#F5F5F5", size = 3) +  # 这个是展示具体的数据，我觉得其实呈不呈现都可以。可选。
+  labs(x = 'Year', y = 'Production Countries', title = 'Average Vote Scores by Year and Production Countries', caption = "Data from The Movie Database (TMDb)") +
+  scale_fill_gradient(low = "#FEF5F2",
+                      high = "#CC0000",
+                      name = "Average Score") +
+  coord_cartesian(expand = FALSE) +
+  theme(
+    axis.ticks = element_blank(),
+    axis.title = element_blank(),
+    axis.text.x = element_text(size = 10),
+    axis.text.y = element_text(size = 10)
+  ) +
+#  theme_minimal()+
+  my_theme_null()
+
+```
+
+
+
+
+
+## 第二部分: 风格分析
+```{r}
+rm(list = ls())
+
+library(ggplot2)
+library(tidyverse)
+library(dplyr)
+library(gghalves)
+library(rstatix)
+library(ggpubr)
+library(ggsci)
+library(fmsb)
+library(ggiraph)
+library(gganimate)
+library(plotly)
+library(cowplot)
+```
+
+```{r}
+my_theme <- function(){
+  theme_linedraw(base_size = 12) +
+    theme(
+      plot.background = element_rect(fill = NA, color = NA),
+      plot.title = element_text(size = 18, hjust = 0.5, vjust = 0.5, color = "black", face = "bold", margin = margin(b = 0.2, unit = "cm")),
+      plot.subtitle = element_text(size = 12, hjust = 0, vjust = 0.5, margin = margin(b = 0.2, unit = "cm")),
+      plot.caption = element_text(size = 10, hjust = 1, face = "italic", margin = margin(t = 0.1, unit = "cm"), colour = "#CC0000"),
+      axis.ticks = element_blank(),
+      axis.text.x = element_text(size = 12, colour = "grey30"),  
+      axis.text.y = element_text(size = 12, colour = "grey30"),
+      legend.background = element_rect(fill = NA, color = NA),
+      legend.position = "none", 
+      legend.key = element_rect(fill = NA, color = NA),
+      legend.title = element_text(size = 12, hjust = 0.5, face = "bold"),
+      panel.grid.major.x = element_line(colour = "grey45", linetype = "dashed", size = 0.1),
+      panel.grid.major.y = element_line(colour = "grey45", linetype = "dashed", size = 0.2),
+      panel.background = element_rect(fill = "white"),
+      panel.grid.major = element_line(color = "grey45", size = 0.3),
+      panel.grid.minor = element_blank(),
+      strip.background = element_rect(fill = ""),
+      strip.text.x = element_text(size = 10, color = "black", face = "bold")
+    )
+}
+```
+
+## 导入数据集, 并筛选对应列
+```{r}
+data_raw <- read.csv('data.csv')
+data_raw <- data_raw %>%
+  select(title,year,vote_average,popularity,revenue,genres)
+```
+
+## 处理数据集
+```{r}
+#一部电影多种类型，则等权分为多种类型
+data <- data_raw %>%
+  mutate(Genres = strsplit(genres,",")) %>%
+  unnest(Genres) %>%
+  mutate(Genres = trimws(Genres))
+```
+
+## 图1: 34年各类电影数量条形图
+```{r}
+data %>%
+  count(Genres) %>%
+  ggplot(aes(x = n, y = reorder(Genres, n))) +
+  geom_bar(stat = 'identity', fill = '#CC0000', width = 0.5) +
+  geom_text(aes(label = n), hjust = -0.3, col = '#CC0000') +
+  scale_x_continuous(expand = expansion(mult = c(0, 0.1))) +
+  labs(x = 'Count',y = '', title = 'Number of Movies by Genres', caption = "Data from The Movie Database (TMDb)") +
+  my_theme() +
+  theme(panel.grid.major.y = element_blank())
+```
+
+## 处理数据集, 计算每种类型电影的平均评分, 票房, 受欢迎程度
+```{r}
+Genres_summary <- data %>%
+  group_by(Genres) %>%
+  summarise(
+    Avg_Rating = mean(vote_average, na.rm=TRUE),
+    Avg_Revenue = mean(revenue, na.rm=TRUE),
+    Avg_Popular = mean(popularity, na.rm=TRUE)
+  )
+```
+
+## 图2~4 不同类型电影全历史评分、票房、人气度排名(强调前五名)
+```{r}
+rating_top5 <- Genres_summary %>% 
+  arrange(desc(Avg_Rating)) %>% 
+  head(5) %>%
+  mutate(Highlight = "Top")
+
+rating_others <- Genres_summary %>%
+  anti_join(rating_top5, by = "Genres") %>%
+  mutate(Highlight = "Other")
+
+rating_data <- bind_rows(rating_top5, rating_others)
+
+rating_data %>%
+  ggplot(aes(x = Genres, y = Avg_Rating, color = rating_data$Highlight)) +
+    geom_segment(aes(x = reorder(Genres,Avg_Rating), y = 0, xend = reorder(Genres,Avg_Rating), yend = Avg_Rating), size = 0.5, color=1) +
+    geom_point(size = 3, shape = 21, fill = ifelse(rating_data$Highlight == "Top", '#CC0000', "grey70"),color=1) +
+  geom_text(aes(label = round(Avg_Rating, 2)), hjust = -0.3) +
+    scale_color_manual(values = c("Top" = '#CC0000', "Other" = "grey70")) +
+    scale_y_continuous(expand = expansion(mult = c(0, 0.1))) +
+    coord_flip() +
+    labs(title = "Average Rating by Genres", x = "", y = "Average Rating", caption = "Data from The Movie Database (TMDb)") +
+    my_theme() +
+  theme(panel.grid.major.y = element_blank())
+
+revenue_top5 <- Genres_summary %>% 
+  arrange(desc(Avg_Revenue)) %>% 
+  head(5) %>%
+  mutate(Highlight = "Top")
+
+revenue_others <- Genres_summary %>%
+  anti_join(revenue_top5, by = "Genres") %>%
+  mutate(Highlight = "Other")
+
+revenue_data <- bind_rows(revenue_top5, revenue_others)
+
+revenue_data %>%
+  ggplot(aes(x = Genres, y = Avg_Revenue/10^8, color = revenue_data$Highlight)) +
+    geom_segment(aes(x = reorder(Genres,Avg_Revenue), y = 0, xend = reorder(Genres,Avg_Revenue), yend = Avg_Revenue/10^8), size = 0.5, color=1) +
+    geom_point(size = 3, shape = 21, fill = ifelse(revenue_data$Highlight == "Top", '#CC0000', "grey70"),color=1) +
+  geom_text(aes(label = round(Avg_Revenue/10^8, 2)), hjust = -0.3) +
+    scale_color_manual(values = c("Top" = '#CC0000', "Other" = "grey70")) +
+    scale_y_continuous(expand = expansion(mult = c(0, 0.1))) +
+    coord_flip() +
+    labs(title = "Average Revenue by Genres", x = "", y = expression(paste("Average Revenue ($ 1 x", 10^8, ")")), caption = "Data from The Movie Database (TMDb)") +
+    my_theme() +
+  theme(panel.grid.major.y = element_blank())
+
+popular_top5 <- Genres_summary %>% 
+  arrange(desc(Avg_Popular)) %>% 
+  head(5) %>%
+  mutate(Highlight = "Top")
+
+popular_others <- Genres_summary %>%
+  anti_join(popular_top5, by = "Genres") %>%
+  mutate(Highlight = "Other")
+
+popular_data <- bind_rows(popular_top5, popular_others)
+
+popular_data %>%
+  ggplot(aes(x = Genres, y = Avg_Popular, color = popular_data$Highlight)) +
+    geom_segment(aes(x = reorder(Genres,Avg_Popular), y = 0, xend = reorder(Genres,Avg_Popular), yend = Avg_Popular), size = 0.5, color=1) +
+    geom_point(size = 3, shape = 21, fill = ifelse(popular_data$Highlight == "Top", '#CC0000', "grey70"),color=1) +
+  geom_text(aes(label = round(Avg_Popular, 2)), hjust = -0.3) +
+    scale_color_manual(values = c("Top" = '#CC0000', "Other" = "grey70")) +
+    scale_y_continuous(expand = expansion(mult = c(0, 0.1))) +
+    coord_flip() +
+    labs(title = "Average Popularity by Genres", x = "", y = "Average Popularity", caption = "Data from The Movie Database (TMDb)") +
+    my_theme() +
+  theme(panel.grid.major.y = element_blank())
+```
+
+## 不同种类电影评分的半边箱线图
+
+## 数量前四的电影: Comedy,Action,Thriller,Romance
+## 年份分割: 1990-1999,2000-2010,2011-2023
+
+```{r}
+data_f <- data %>%
+  filter(Genres %in% c('Comedy','Action','Thriller','Romance','Adventure')) %>%
+  mutate(Period = case_when(
+    year >= 1990 & year <= 1999 ~'1990-1999',
+    year >= 2000 & year <= 2010 ~'2000-2010',
+    year >= 2011 & year <= 2023 ~'2011-2023'
+  ))
+
+data_f %>%
+  ggplot(aes(Period,vote_average)) +
+  geom_half_boxplot(aes(fill=Period),color="black",
+                    side="l",errorbar.draw = T, 
+                    outlier.shape = NA, width=0.6) +            
+  geom_half_point(aes(color=Period),
+  side = "r",size = 0.5,
+  transformation_params = list(height = 0,width = 0.001,seed = 2))+
+  facet_wrap(.~Genres,nrow=1)+ 
+  scale_y_continuous(limits = c(5.4,8.8),breaks = seq(5.4,8.8,0.2))+
+  scale_fill_npg()+
+  scale_color_npg()+
+  scale_fill_manual(values = c("#B2182B", "#F4A582", "#4D4D4D")) +
+  scale_color_manual(values = c("#B2182B", "#F4A582", "#4D4D4D")) +
+  labs(x=NULL,y=NULL, title = "Semi-boxplot of movie ratings across different genres", caption = "Data from The Movie Database (TMDb)")+
+  theme(plot.title = element_text(size = 18, hjust = 0.5, vjust = 0.5, color = "black", face = "bold", margin = margin(b = 0.2, unit = "cm")),
+      plot.subtitle = element_text(size = 12, hjust = 0, vjust = 0.5, margin = margin(b = 0.2, unit = "cm")),
+      plot.caption = element_text(size = 10, hjust = 1, face = "italic", margin = margin(t = 0.1, unit = "cm"), colour = "#CC0000"),
+    plot.margin=unit(c(0.5,0.5,0.5,0.5),units=,"cm"),
+        panel.background = element_blank(),
+        plot.background = element_blank(),
+        strip.text = element_text(size=12),
+        axis.line = element_line(color = "black",size = 0.4),
+        axis.text.y = element_text(color="black",size=10),
+        axis.text.x = element_text(angle = 45, hjust = 1, color = "black", size = 10),
+        legend.position = "none",
+        panel.grid.major = element_line(color = "grey90", size = 0.3),
+        panel.grid.minor = element_blank(),
+        panel.spacing = unit(0.2, "lines"))+
+  coord_cartesian()
+```
+
+## 从产量, 评分, 票房, 人气度排名前10的电影中, 筛选出现次数最多的五类, 可视化随年份变化的折线图
+```{r}
+library(RColorBrewer)
+col_ls = c("#B2182B", "#D6604D", "#F4A582", "#BABABA", "#4D4D4D")
+
+data_f <- data %>%
+  filter(Genres %in% c('Fantasy','Animation', 'Family', 'Science Fiction', 'Adventure')) 
+
+Genres_rating <- data_f %>%
+  group_by(year, Genres) %>%
+  summarize(avg_rating = round(mean(vote_average, na.rm = TRUE), 2)) %>%
+  ungroup()
+#平均评分
+a <- Genres_rating %>%
+  ggplot(aes(x = year, y = avg_rating, color = Genres, group = Genres)) +
+  geom_line(size = 0.8) +  
+  geom_point(size = 1) + 
+  scale_x_continuous(breaks = seq(min(Genres_rating$year), max(Genres_rating$year), by = 5)) +
+  scale_color_manual(values = col_ls) +
+  labs(x = '', y='') +
+  my_theme() + 
+  theme(axis.text.x = element_blank()) +
+  theme(legend.position = 'top') 
+        
+#平均票房
+Genres_revenue <- data_f %>%
+  group_by(year, Genres) %>%
+  summarize(avg_revenue = round(mean(revenue, na.rm = TRUE), 2)) %>%
+  ungroup()
+
+b <- Genres_revenue %>%
+  ggplot(aes(x = year, y = avg_revenue/10^8, color = Genres, group = Genres)) +
+  geom_line(size = 0.8) +  
+  geom_point(size = 1) +  
+  scale_x_continuous(breaks = seq(min(Genres_revenue$year), max(Genres_revenue$year), by = 5)) +
+  scale_color_manual(values = col_ls) +
+  labs(x = '', y = '', caption = "Data from The Movie Database (TMDb)")+
+  my_theme() + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = 'none')  
+
+#brewer.pal(8, "RdGy")
+```
+
+```{r}
+plots = plot_grid(a,b,ncol = 1, align = "v",labels = c("Rating", "Revenue"), label_size = 10, label_x = c(0.45,0.44), label_y = c(0.8,1.07))
+
+title <- ggdraw() +
+draw_label("Average Movie Rating & Revenue by Genre Over Years",fontface = 'bold', x = 0.18, hjust = 0) +
+  theme(plot.margin = margin(0, 0, 0, 5))
+
+plot_grid(title, plots, ncol = 1,rel_heights = c(0.1, 1))
+```
+```{r}
+#平均人气
+Genres_popularity <- data_f %>%
+  filter(year<=2022) %>%
+  group_by(year, Genres) %>%
+  summarize(avg_popularity = round(mean(popularity, na.rm = TRUE), 2)) %>%
+  ungroup()
+
+Genres_popularity %>%
+  ggplot(aes(x = year, y = avg_popularity, color = Genres, group = Genres)) +
+  geom_line(size = 0.8) +  
+  geom_point(size = 1) +  
+  labs(title = "Average Movie Popularity by Genre Over Years", 
+       x = "", 
+       y = "Average Popularity", 
+       caption = "Data from The Movie Database (TMDb)") +
+  scale_x_continuous(breaks = seq(min(Genres_popularity$year), max(Genres_popularity$year), by = 5)) +
+  scale_color_manual(values = col_ls) +
+  my_theme() + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = 'top')  
+```
+```{r}
+a <- Genres_rating %>%
+  left_join(Genres_revenue, by = c("year","Genres")) %>%
+  ggplot(aes(x = avg_rating, y = avg_revenue/10^8, color = Genres)) +
+  geom_jitter(shape = 16) +
+  scale_color_manual(values = col_ls) +
+  ylab("Average Revenue(Hundred Million)")+
+  xlab('Average Rating') +
+  my_theme() +
+  labs(caption = "Data from The Movie Database (TMDb)") +
+  ggtitle('Relationship between Rating and Revenue by Genres') +
+  theme(plot.title = element_text(size = 15, face = "bold")) +
+  theme(legend.position = "top") 
+
+a
+#ggplotly(a) 
+```
+
+```{r}
+data_summary <- data_f %>%
+  group_by(year, Genres) %>%
+  summarise(
+    avg_vote = mean(vote_average),
+    avg_popularity = mean(popularity),
+    avg_revenue = mean(revenue),
+    .groups = 'drop'
+  )
+
+ggplot(data_summary, aes(x = year, y = avg_vote, color = Genres, group = Genres)) +
+  geom_line() +
+  geom_point() +
+  geom_text(aes(label = formatC(avg_vote, format = "f", digits = 2)), vjust = -0.5) +
+  labs(title = "Changes in Average Ratings Over Time", x = "Year", y = "Average Ratings") +
+  scale_color_manual(values = col_ls) +
+  my_theme() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = 'top') +
+  transition_reveal(year)
+```
+
+## 第三部分: 词频分析
+
+## 话题一: 高频词汇的情感倾向比较(以Tagline为例)
+
+本节中, 我们将通过柱状图进行初步探索性可视化统计分析. 基于情感倾向的分类, 探索电影创作的倾向. 结合可视化结果, 对于突出高频词汇, 进一步予以可视化分析.
+
+```{r}
+rm(list = ls())
+
+library(tidyverse)
+library(showtext)
+library(scales)
+library(palmerpenguins)
+library(friends)
+library(tidymodels)
+library(tidytext)
+library(ggwordcloud)
+library(gt)
+library(gtsummary)
+
+data = read.csv(file = "data.csv")
+```
+
+
+```{r}
+my_theme_null <- function(){
+  theme_linedraw(base_size = 12) +
+    theme(
+      plot.background = element_rect(fill = NA, color = NA),
+      plot.title = element_text(size = 18, hjust = 0.5, vjust = 0.5, color = "black", face = "bold", margin = margin(b = 0.2, unit = "cm")),
+      plot.subtitle = element_text(size = 12, hjust = 0, vjust = 0.5, margin = margin(b = 0.2, unit = "cm")),
+      plot.caption = element_text(size = 10, hjust = 1, face = "italic", margin = margin(t = 0.1, unit = "cm"), colour = "#CC0000"),
+      axis.ticks = element_blank(),
+      axis.text.x = element_text(size = 12, colour = "grey30"),  
+      axis.text.y = element_text(size = 12, colour = "grey30"),
+      legend.background = element_rect(fill = NA, color = NA),
+      legend.position = "none", 
+      legend.key = element_rect(fill = NA, color = NA),
+      legend.title = element_text(size = 12, hjust = 0.5, face = "bold"),
+      panel.grid.major.x = element_line(colour = "grey45", linetype = "dashed", size = 0.1),
+      panel.grid.major.y = element_line(colour = "grey45", linetype = "dashed", size = 0.2),
+      panel.background = element_rect(fill = "white"),
+      panel.grid.major = element_line(color = "grey45", size = 0.3),
+      panel.grid.minor = element_blank(),
+      strip.background = element_rect(fill = ""),
+      strip.text.x = element_text(size = 10, color = "black", face = "bold")
+    )
+}
+```
+
+```{r}
+top_15_tagline <- data %>%
+  unnest_tokens(word, tagline) %>%
+  anti_join(stop_words) %>%
+  count(word) %>%
+  slice_max(n, n = 15)
+
+top_15_tagline %>%
+  ggplot(aes(x = n, y = reorder(word, n))) +
+  geom_bar(stat = "identity", fill = "#CC0000", width = 0.5) +
+  geom_text(aes(label = n), hjust = -0.5, col = "#CC0000") +
+  scale_x_continuous(expand = expansion(mult = c(0, 0.1)),
+                     name = "Frequency") +
+  labs(y = NULL, title = "Top 15 Words in Tagline", 
+       caption = "Data from The Movie Database (TMDb)") +
+  my_theme_null() +
+  theme(panel.grid.major.y = element_blank())
+```
+
+```{r}
+library(ggh4x)
+
+sentiment <- get_sentiments("bing")
+
+word_sentiment <- data %>%
+  unnest_tokens(word, tagline) %>%
+  anti_join(stop_words) %>%
+  inner_join(sentiment) %>%
+  count(word, sentiment, sort = TRUE)
+
+class_color = c("red2", "grey80")
+class_strip = strip_themed(background_x = elem_list_rect(fill = class_color))
+
+word_sentiment %>%
+  group_by(sentiment) %>%
+  slice_max(n, n = 15) %>%
+  mutate(sentiment = factor(sentiment,
+                            levels = c("positive", "negative"))) %>%
+  ggplot(aes(x = n, y = reorder_within(word, n, sentiment),
+             fill = sentiment)) +
+  geom_bar(stat = "identity", width = 0.5) +
+  geom_text(aes(label = n), hjust = -0.1) +
+  scale_x_continuous(expand = expansion(mult = c(0, .15)),
+                     name = "Frequency") +
+  scale_y_reordered() +
+  scale_fill_manual(values = c("#CC0000", "grey70")) +
+  facet_wrap2(~sentiment, scales = "free", strip = class_strip) +
+  labs(y = NULL,
+       title = "Top Words in Tagine By Sentiment", 
+       caption = "Data from The Movie Database (TMDb)") +
+  my_theme_null() +
+  theme(panel.grid.major.y = element_blank())
+```
+
+```{r}
+word_sentiment %>%
+  slice_max(n, n = 15) %>%
+  ggplot(aes(x = n, y = reorder(word, n), fill = sentiment)) +
+  geom_bar(stat = "identity", width = 0.5) +
+  geom_text(aes(label = n), hjust = -0.5) +
+  scale_fill_manual(values = c("grey70", "#CC0000")) +
+  scale_x_continuous(expand = expansion(mult = c(0, .1)),
+                     name = "Frequency") +
+  labs(y = NULL, fill = "Sentiment",
+       title = "Top Words in Tagine By Sentiment", 
+       caption = "Data from The Movie Database (TMDb)") +
+  my_theme_null() +
+  theme(panel.grid.major.y = element_blank(),
+        legend.position = c(0.93, 0.2))
+```
+
+
+
+## 话题二: 词云图可视化分析(以Keywords为例)
+```{r}
+set.seed(20240516)
+
+top_100 <- data %>%
+  unnest_tokens(word, keywords) %>%
+  anti_join(stop_words) %>%
+  inner_join(sentiment) %>%
+  count(word, sentiment) %>%
+  slice_max(n, n = 100)
+
+pic = png::readPNG(system.file("extdata/hearth.png", package = "ggwordcloud"))
+
+top_100 %>%
+  ggplot(aes(label = word, size = n, color = sentiment)) +
+  geom_text_wordcloud_area(mask = pic, rm_outside = TRUE) +
+  scale_size_area(max_size = 24) +
+  scale_color_manual(values = c("grey70", "#CC0000")) +
+  labs(title = "Wordcloud of Keywords", caption = "Data from The Movie Database (TMDb)") +
+  my_theme_null()
+```
+
+**评论**:
+
+$\quad$"$\rm love$"在众多词汇当中以它独特的高频次数拔得头筹, 自然引出了下一话题的讨论.
+
+## 话题三: "love"词汇存在性对电影热度的影响(以Popularity为例)
+
+本节中, 对于电影热度分布集中的数据区域进行探讨(以0~100为例), 不过度关注极端异常点的取值.
+```{r}
+## 定义中位数标签
+n_fun <- function(x){
+  return(data.frame(
+    y = median(x, na.rm = TRUE),
+    label = paste0("Median = ", round(median(x, na.rm = TRUE), 1))
+  ))
+}
+
+data %>%
+  filter(tagline != "") %>%
+  mutate(love_contain = ifelse(str_detect(tagline, "love"), "Exist \"love\"", "Don't exist \"love\"")) %>%
+  add_count(love_contain) %>%
+  mutate(n_axis = paste0(love_contain, "\n", n, " Samples")) %>%
+  ggplot(aes(x = popularity, y = reorder(n_axis, n))) +
+  geom_violin(fill = "#CC0000", linewidth = 0.5, alpha = 0.6) +
+  stat_summary(geom = "text", fun.data = n_fun, size = 5, hjust = 0.5, vjust = 2.6) +
+  geom_boxplot(width = 0.2, color = "lightyellow", alpha = 0.5, outlier.colour = "#CC0000") +
+  labs(title = "Distribution by Existence of \"love\"", x = "Popularity", y = "", caption = "Data from The Movie Database (TMDb)") +
+  xlim(0, 100) +
+  my_theme_null()
+```
+
+**评论**:
+
+1. 从上述小提琴图中, 不难看出二者总体分布差异并不明显;
+
+2. 含有"$\rm love$"的电影中位数指标略逊色于不含"$\rm love$"的电影, 但在$\rm Popularity$指标上$50 \sim 75$段略有起伏波动, 中高$\rm Popularity$表现略微良好;
+
+3. 含有"$\rm love$"的电影$\rm Popularity$数据低位相对较高.
+
+**小结**:
+
+$\quad$进行电影创作时, 不能一味追求电影类型(如: 爱情片)的过度同质化. 应当更加着力于情节设定, 人物演绎等重要环节.
+
+
+
+## 话题四: 多元组分析(以2元组, 基于Overview为例)
+```{r}
+display = data %>%
+  unnest_tokens(bigram, overview, token = "ngrams", n = 2) %>%
+  separate(bigram, into = c("first_word", "second_word"),
+           remove = FALSE, sep = " ") %>%
+  filter(!first_word %in% stop_words$word &
+           !second_word %in% stop_words$word) %>%
+  count(bigram, sort = TRUE)
+
+display %>%
+  slice_max(n, n = 15) %>%
+  ggplot(aes(x = n,
+             y = reorder(bigram, n))) +
+  geom_bar(stat = "identity", fill = "#CC0000", width = 0.5) +
+  geom_text(aes(label = n), hjust = -0.5, col = "#CC0000") +
+  scale_x_continuous(expand = expansion(mult = c(0, .1)),
+                     name = "Frequency") +
+  scale_y_reordered() +
+  labs(y = NULL, title = "Top Common Bigrams in Overview", caption = "Data from The Movie Database (TMDb)") +
+  my_theme_null() +
+  theme(panel.grid.major.y = element_blank())
+```
+
+**评论**:
+
+1. 高频的二元词汇主要有: "$\rm true \;story$" "$\rm los \;angeles$" "$\rm world \;war$" "$\rm war \;ii$";
+
+2. 上述词汇表达了真实故事, 特别是带有洛杉矶地点元素, 战争主题等, 是电影创作的一大重要类型. 下面围绕在$\rm Overview$中是否包含以上主题, 进行票房影响分析.
+
+## 话题五: "true story"词汇存在性对电影票房收入的影响(以Revenue为例)
+```{r}
+## 定义中位数标签
+n_fun <- function(x){
+  return(data.frame(
+    y = median(x, na.rm = TRUE),
+    label = paste0("Median = ", round(median(x, na.rm = TRUE), 1))
+  ))
+}
+
+data %>%
+  filter(overview != "") %>%
+  mutate(true_contain = ifelse(str_detect(overview, "true story"), "Exist \"true story\"", "Don't exist \"true story\"")) %>%
+  add_count(true_contain) %>%
+  mutate(n_axis = paste0(true_contain, "\n", n, " Samples")) %>%
+  ggplot(aes(x = revenue/10^7, y = reorder(n_axis, n))) +
+  geom_violin(fill = "#CC0000", linewidth = 0.5, alpha = 0.6) +
+  stat_summary(geom = "text", fun.data = n_fun, size = 5, hjust = 0.5, vjust = 2.6) +
+  geom_boxplot(width = 0.2, color = "lightyellow", alpha = 0.5, outlier.colour = "#CC0000") +
+  labs(title = "Distribution by Existence of \"true story\"", x = expression(paste("Revenue(", 1%*%10^7, ")")), y = "", caption = "Data from The Movie Database (TMDb)") +
+  xlim(0, 20) +
+  my_theme_null()
+```
+
+**评论**:
+
+1. 总体分布上, 不含"$\rm true \;story$"分布在低票房段集聚, 高票房段表现比含"$\rm true \;story$"良好;
+
+2. 总体中位票房上看来, 含"$\rm true \;story$"具有约为$4 \times 10^6$优势, 差异较为显著. 一定程度上说明讲述真实故事的电影体裁, 能够获得更高的人气热度, 获得更加可观的票房收入. 
+
